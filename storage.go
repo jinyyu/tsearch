@@ -1,17 +1,29 @@
 package tsearch
 
-import "github.com/gomodule/redigo/redis"
+import (
+	"fmt"
+	"github.com/gomodule/redigo/redis"
+)
 
 type Storage interface {
-	Speak() string
+	SaveTokens(id uint32, tokens []string) (err error)
+	GetTokens(id uint32) (tokens []string, err error)
 }
 
 type redisStorage struct {
 	conn redis.Conn
 }
 
-func (s *redisStorage) Speak() string {
-	return ""
+func (s *redisStorage) getTokenKey(id uint32) string {
+	return fmt.Sprintf("tsearch_token:%d", id)
+}
+
+func (s *redisStorage) SaveTokens(id uint32, tokens []string) (err error) {
+	return nil
+}
+
+func (s *redisStorage) GetTokens(id uint32) (tokens []string, err error) {
+	return
 }
 
 func NewRedisStorage(addr string) (Storage, error) {
