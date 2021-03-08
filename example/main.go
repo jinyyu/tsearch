@@ -10,5 +10,21 @@ func main() {
 	if err != nil {
 		log.Fatal("NewRedisStorage error")
 	}
-	storage.Speak()
+
+	separator := tsearch.NewTrigramSeparator()
+
+	textSearch := tsearch.NewTextSearch(separator, storage)
+	err = textSearch.UpdateText(1, "two words")
+	if err != nil {
+		log.Fatalf("UpdateText error %v", err)
+	}
+
+	results, err := textSearch.Search("word", 0.8)
+	if err != nil {
+		log.Fatalf("Search error %v", err)
+	}
+
+	for _, result := range results {
+		log.Printf("id = %d, similarity = %f", result.ID, result.Similarity)
+	}
 }
