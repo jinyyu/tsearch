@@ -2,7 +2,6 @@ package tsearch
 
 import (
 	"sort"
-	"strings"
 )
 
 type TextSearch struct {
@@ -33,26 +32,10 @@ func (t *TextSearch) UpdateText(id uint32, text string) (err error) {
 }
 
 // WordSimilarity 计算两个文本的相似度，主要用于调试
-func (t *TextSearch) WordSimilarity(a string, b string) float32 {
-	tokenA := t.separator.Extract(a)
-	tokenA = DistinctTokens(tokenA)
-
-	tokenB := DistinctTokens(t.separator.Extract(b))
-	sort.Strings(tokenB)
-	println(strings.Join(tokenB, ","))
-	tokenMap := map[string]bool{}
-	for _, tk := range tokenB {
-		tokenMap[tk] = true
-	}
-
-	var matchCount int
-	for _, tk := range tokenA {
-		_, ok := tokenMap[tk]
-		if ok {
-			matchCount += 1
-		}
-	}
-	return float32(matchCount) / float32(len(tokenA))
+func (t *TextSearch) WordSimilarity(word1 string, word2 string) float32 {
+	token1 := t.separator.Extract(word1)
+	token2 := t.separator.Extract(word2)
+	return calcWordSimilarity(token1, token2)
 }
 
 type SearchResult struct {
