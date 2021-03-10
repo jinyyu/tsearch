@@ -1,6 +1,7 @@
 package tsearch
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -61,4 +62,15 @@ func TestDistinctTokens(t *testing.T) {
 			t.Errorf("DistinctTokens error %d\n", i)
 		}
 	}
+}
+
+func TestSimilarity(t *testing.T) {
+	a := "quan an"
+	b := "an kuan 123"
+	separator := NewTrigramSeparator()
+	textSearch := NewTextSearch(separator, nil)
+
+	value := textSearch.WordSimilarity(a, b)
+	fmt.Println(value)
+
 }

@@ -22,6 +22,8 @@ func (t *trigramSeparator) Extract(text string) []string {
 	for _, word := range words {
 		tokens = append(tokens, t.extractWord(word)...)
 	}
+	//去重
+	tokens = DistinctTokens(tokens)
 	return tokens
 }
 
