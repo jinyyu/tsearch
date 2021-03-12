@@ -50,14 +50,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("loadTestData error %v", err)
 	}
-
 	/*
+
 		for id, item := range items {
 			err = textSearch.UpdateText(id, item.Pinyin)
 			if err != nil {
 				log.Fatalf("UpdateText error %v", err)
 			}
 		}
+
 	*/
 
 	start := time.Now()
@@ -72,7 +73,7 @@ func main() {
 
 	for _, result := range results {
 		item, _ := items[result.ID]
-		log.Printf("id =%d, similarity =  %f, desc = %s", result.ID, result.Similarity, item.Desc)
+		log.Printf("id = %d, similarity = %f, desc = %s", result.ID, result.Similarity, item.Desc)
 	}
 
 	log.Printf("use time %d (ms)", (end.UnixNano()-start.UnixNano())/1000000)

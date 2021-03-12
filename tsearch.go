@@ -3,6 +3,7 @@ package tsearch
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/gomodule/redigo/redis"
 	"sort"
 )
 
@@ -19,14 +20,26 @@ func NewTextSearch(separator Separator, storage Storage) *TextSearch {
 }
 
 func (t *TextSearch) UpdateText(id uint32, text string) (err error) {
-	idStr := fmt.Sprintf("%d", id)
-	idKey := t.getIDKey(id)
-	//获取旧的的分词
-	values, err := t.storage.MultiGet(idKey)
+
+	err = t.dropGrams(id)
 	if err != nil {
 		return err
 	}
-	if len(values) > 0 && values[0] != "" {
+
+	err = t.insertGrams(id, text)
+	return err
+}
+
+func (t *TextSearch) dropGrams(id uint32) (err error) {
+	idDistinctKey := t.getDistinctIDKey(id)
+	idStr := fmt.Sprintf("%d", id)
+
+	//获取旧的的分词
+	values, err := t.storage.MultiGet(idDistinctKey)
+	if err != nil {
+		return err
+	}
+	if values[0] != "" {
 		var oldGrams []string
 		err = json.Unmarshal([]byte(values[0]), &oldGrams)
 		if err != nil {
@@ -46,35 +59,60 @@ func (t *TextSearch) UpdateText(id uint32, text string) (err error) {
 			return err
 		}
 	}
+	return nil
+}
+
+func (t *TextSearch) insertGrams(id uint32, text string) (err error) {
+	idKey := t.getIDKey(id)
+	idDistinctKey := t.getDistinctIDKey(id)
 
 	//更新分词
 	grams := t.separator.Extract(text)
-	data, err := json.Marshal(grams)
-	if err != nil {
-		return err
+
+	updateParam := make([]*KeyValue, 0, 2)
+	if len(grams) > 0 {
+		data, _ := json.Marshal(grams)
+		updateParam = append(updateParam, &KeyValue{
+			Key:   idKey,
+			Value: string(data),
+		})
 	}
-	err = t.storage.MultiSet(&KeyValue{
-		Key:   idKey,
-		Value: string(data),
-	})
+
+	distinctGrams := distinctStrings(grams)
+	if len(distinctGrams) > 0 {
+		data, _ := json.Marshal(distinctGrams)
+		updateParam = append(updateParam, &KeyValue{
+			Key:   idDistinctKey,
+			Value: string(data),
+		})
+	}
+
+	err = t.storage.MultiSet(updateParam...)
 	if err != nil {
 		return err
 	}
 
-	kvs := make([]*KeyValue, len(grams))
-	for i, gram := range grams {
+	kvs := make([]*KeyValue, len(distinctGrams))
+	for i := range distinctGrams {
 		kvs[i] = &KeyValue{
-			Key:   t.getGramKey(gram),
-			Value: idStr,
+			Key:   t.getGramKey(distinctGrams[i]),
+			Value: fmt.Sprintf("%d", id),
 		}
 	}
-
 	err = t.storage.MultiSetAdd(kvs...)
+	if err != nil {
+		return err
+	}
 	return err
+
 }
 
 func (t *TextSearch) getIDKey(id uint32) string {
 	return fmt.Sprintf("id:%d", id)
+}
+
+func (t *TextSearch) getDistinctIDKey(id uint32) string {
+	return fmt.Sprintf("id_distinct:%d", id)
 }
 
 func (t *TextSearch) getGramKey(gram string) string {
@@ -99,17 +137,20 @@ func (t *TextSearch) Search(text string, similarityThreshold float32, limit int)
 	if len(grams) == 0 {
 		return nil, nil
 	}
+	distinctGrams := distinctStrings(grams)
 
-	hists, err := t.calcGramHits(grams)
+	hists, err := t.calcGramHits(distinctGrams, similarityThreshold)
 	if err != nil {
 		return nil, err
 	}
 
-	var idKeys []string
-	var idList []uint32
+	if len(hists) == 0 {
+		return
+	}
 
-	for id, _ := range hists {
-		idList = append(idList, id)
+	idKeys := make([]string, 0, len(hists))
+	for i := range hists {
+		id := uint32(hists[i])
 		idKeys = append(idKeys, t.getIDKey(id))
 	}
 
@@ -124,17 +165,13 @@ func (t *TextSearch) Search(text string, similarityThreshold float32, limit int)
 		if err != nil {
 			return nil, err
 		}
-		count, _ := hists[idList[i]]
-		if CALCSML(len(grams), count.Count, len(grams)) < similarityThreshold {
-			continue
-		}
 
 		s := calcWordSimilarity(grams, tokens)
 		if s < similarityThreshold {
 			continue
 		}
 		results = append(results, &SearchResult{
-			ID:         idList[i],
+			ID:         uint32(hists[i]),
 			Similarity: s,
 		})
 	}
@@ -152,32 +189,36 @@ type HitCounter struct {
 	Count int
 }
 
-func (t *TextSearch) calcGramHits(grams []string) (hits map[uint32]*HitCounter, err error) {
+func (t *TextSearch) calcGramHits(grams []string, similarityThreshold float32) (ids []uint64, err error) {
 	keys := make([]string, len(grams))
 	for i := range grams {
 		keys[i] = t.getGramKey(grams[i])
 	}
-
-	memberMap, err := t.storage.MultiGetMembers(keys...)
+	replies, err := t.storage.MultiGetMembers(keys...)
 	if err != nil {
 		return nil, err
 	}
 
-	hits = make(map[uint32]*HitCounter)
+	idMaps := map[uint64]int{}
 
-	for _, members := range memberMap {
-		for _, id := range members {
+	for _, reply := range replies {
+		hitIDs, err := redis.Uint64s(reply, nil)
+		if err != nil {
+			return nil, err
+		}
 
-			counter, ok := hits[uint32(id)]
-			if ok {
-				counter.Count += 1
-			} else {
-				counter = &HitCounter{
-					Count: 1,
-				}
-				hits[uint32(id)] = counter
-			}
+		for _, id := range hitIDs {
+			idMaps[id] += 1
 		}
 	}
-	return hits, nil
+
+	atLeast := int(float32(len(grams)) * similarityThreshold)
+	for id, count := range idMaps {
+		if count < atLeast {
+			continue
+		}
+
+		ids = append(ids, id)
+	}
+	return
 }

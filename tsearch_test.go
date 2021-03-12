@@ -39,6 +39,36 @@ func Test_TrigramSeparator(t *testing.T) {
 	}
 }
 
+func Test_distinctString(t *testing.T) {
+	type Test struct {
+		a []string
+		b []string
+	}
+
+	tests := []Test{
+		{
+			[]string{"1", "1", "2", "3", "3"},
+			[]string{"1", "2", "3"},
+		},
+		{
+			[]string{"1", "2", "2", "3"},
+			[]string{"1", "2", "3"},
+		},
+		{
+			[]string{"1"},
+			[]string{"1"},
+		},
+	}
+
+	for i, test := range tests {
+		output := distinctStrings(test.a)
+		if !cmpStringArray(test.b, output) {
+			t.Errorf("distinctStrings error %d\n", i)
+		}
+	}
+
+}
+
 func TestSimilarity(t *testing.T) {
 	a := "niu lan qi an quan"
 	b := "wei ruan bi ying liu lan qi an quan fang hu"

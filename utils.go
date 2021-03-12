@@ -5,6 +5,21 @@ import (
 	"sort"
 )
 
+func distinctStrings(a []string) []string {
+	sort.Strings(a)
+	ret := make([]string, 0, len(a))
+	for i := range a {
+		if i > 0 {
+			if a[i] != a[i-1] {
+				ret = append(ret, a[i])
+			}
+		} else {
+			ret = append(ret, a[i])
+		}
+	}
+	return ret
+}
+
 // 带位置信息的分词
 type positionGram struct {
 	gram  string //分词

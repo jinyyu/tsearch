@@ -9,8 +9,6 @@ type KeyValue struct {
 	Value string
 }
 
-type Members []uint64
-
 type Storage interface {
 	MultiSet(kvs ...*KeyValue) (err error)
 	MultiGet(keys ...string) (values []string, err error)
@@ -18,7 +16,7 @@ type Storage interface {
 
 	MultiSetAdd(kvs ...*KeyValue) (err error)
 	MultiSetDel(kvs ...*KeyValue) (err error)
-	MultiGetMembers(keys ...string) (memberMap map[string]Members, err error)
+	MultiGetMembers(keys ...string) (reply []interface{}, err error)
 }
 
 type redisStorage struct {
@@ -91,7 +89,7 @@ func (s *redisStorage) MultiSetDel(kvs ...*KeyValue) (err error) {
 	return err
 }
 
-func (s *redisStorage) MultiGetMembers(keys ...string) (memberMap map[string]Members, err error) {
+func (s *redisStorage) MultiGetMembers(keys ...string) (reply []interface{}, err error) {
 	if len(keys) == 0 {
 		return nil, err
 	}
@@ -101,22 +99,9 @@ func (s *redisStorage) MultiGetMembers(keys ...string) (memberMap map[string]Mem
 		_ = s.conn.Send("SMEMBERS", key)
 	}
 
-	values, err := redis.Values(s.conn.Do("EXEC"))
+	reply, err = redis.Values(s.conn.Do("EXEC"))
 	if err != nil && err != redis.ErrNil {
 		return
-	}
-
-	memberMap = map[string]Members{}
-
-	for i, value := range values {
-		members, err := redis.Uint64s(value, nil)
-		if err != nil {
-			return nil, err
-		}
-		if len(members) > 0 {
-			key := keys[i]
-			memberMap[key] = members
-		}
 	}
 	return
 }
