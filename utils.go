@@ -87,81 +87,80 @@ func makePositionalGrams(grams1 []string, grams2 []string) (result []positionGra
 	return result
 }
 
-func CALCSML(count int, len1 int, len2 int) float32 {
-	return float32(count) / float32(len1+len2-count)
+func calcSimilarity(matchCount int, len1 int, len2 int) float32 {
+	return float32(matchCount) / float32(len1+len2-matchCount)
 }
 
-func iterateWordSimilarity(token2Indexes []int, found []bool, numberUniqueToken1 int) float32 {
-	var smlr_max float32
-	var smlr_cur float32
+func iterateWordSimilarity(gramIndexes2 []int, foundIndexes []bool, uniqueGrams1 int) float32 {
+	var smlrMax float32
+	var smlrCur float32
 
-	lastpos := make([]int, len(found))
-	for i := range lastpos {
-		lastpos[i] = -1
+	lastPos := make([]int, len(foundIndexes))
+	for i := range lastPos {
+		lastPos[i] = -1
 	}
 
 	lower := -1
-	ulen2 := 0
+	uniqueGrams2 := 0
 	count := 0
 	upper := -1
 
-	for i := 0; i < len(token2Indexes); i++ {
-		trgindex := token2Indexes[i]
+	for i := 0; i < len(gramIndexes2); i++ {
+		trgIndex := gramIndexes2[i]
 
-		if lower >= 0 || found[trgindex] {
-			if lastpos[trgindex] < 0 {
-				ulen2++
-				if found[trgindex] {
+		if lower >= 0 || foundIndexes[trgIndex] {
+			if lastPos[trgIndex] < 0 {
+				uniqueGrams2++
+				if foundIndexes[trgIndex] {
 					count++
 				}
 
 			}
-			lastpos[trgindex] = i
+			lastPos[trgIndex] = i
 		}
 
-		if found[trgindex] {
+		if foundIndexes[trgIndex] {
 			upper = i
 			if lower == -1 {
 				lower = i
-				ulen2 = 1
+				uniqueGrams2 = 1
 			}
 
-			smlr_cur = CALCSML(count, numberUniqueToken1, ulen2)
+			smlrCur = calcSimilarity(count, uniqueGrams1, uniqueGrams2)
 
-			tmp_count := count
-			tmp_ulen2 := ulen2
-			prev_lower := lower
+			tmpCount := count
+			tmpUniqueGram2 := uniqueGrams2
+			prevLower := lower
 
-			for tmp_lower := lower; tmp_lower <= upper; tmp_lower++ {
-				if true {
-					smlr_tmp := CALCSML(tmp_count, numberUniqueToken1, tmp_ulen2)
-					if smlr_tmp > smlr_cur {
-						smlr_cur = smlr_tmp
-						ulen2 = tmp_ulen2
-						lower = tmp_lower
-						count = tmp_count
-					}
+			for tmpLower := lower; tmpLower <= upper; tmpLower++ {
+				smlrTmp := calcSimilarity(tmpCount, uniqueGrams1, tmpUniqueGram2)
+				if smlrTmp > smlrCur {
+					smlrCur = smlrTmp
+					uniqueGrams2 = tmpUniqueGram2
+					lower = tmpLower
+					count = tmpCount
 				}
-				tmp_trgindex := token2Indexes[tmp_lower]
-				if lastpos[tmp_trgindex] == tmp_lower {
-					tmp_ulen2--
-					if found[tmp_trgindex] {
-						tmp_count--
+
+				tmpTrgIndex := gramIndexes2[tmpLower]
+				if lastPos[tmpTrgIndex] == tmpLower {
+					tmpUniqueGram2--
+					if foundIndexes[tmpTrgIndex] {
+						tmpCount--
 					}
 				}
 			}
 
-			smlr_max = float32(math.Max(float64(smlr_max), float64(smlr_cur)))
+			smlrMax = float32(math.Max(float64(smlrMax), float64(smlrCur)))
 
-			for tmp_lower := prev_lower; tmp_lower < lower; tmp_lower++ {
+			for tmpLower := prevLower; tmpLower < lower; tmpLower++ {
 
-				tmp_trgindex := token2Indexes[tmp_lower]
-				if lastpos[tmp_trgindex] == tmp_lower {
-					lastpos[tmp_trgindex] = -1
+				tmpTrgIndex := gramIndexes2[tmpLower]
+				if lastPos[tmpTrgIndex] == tmpLower {
+					lastPos[tmpTrgIndex] = -1
 				}
 			}
 		}
 	}
 
-	return smlr_max
+	return smlrMax
 }
