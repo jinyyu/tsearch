@@ -1,130 +1,121 @@
 package tsearch
 
 import (
-	"encoding/json"
-	"fmt"
 	"github.com/gomodule/redigo/redis"
-	"strconv"
 )
 
-type Storage interface {
-	SaveTokens(id uint32, tokens []string) (err error)
-	GetTokens(id uint32) (tokens []string, err error)
-	DeleteTokens(id uint32) (err error)
+type KeyValue struct {
+	Key   string
+	Value string
+}
 
-	UpdateIndex(id uint32, oldTokens []string, newTokens []string) (err error)
-	SearchIndex(tokens []string) (hits map[uint32]*HitCounter, err error)
+type Members []uint64
+
+type Storage interface {
+	MultiSet(kvs ...*KeyValue) (err error)
+	MultiGet(keys ...string) (values []string, err error)
+	MultiDel(keys ...string) (err error)
+
+	MultiSetAdd(kvs ...*KeyValue) (err error)
+	MultiSetDel(kvs ...*KeyValue) (err error)
+	MultiGetMembers(keys ...string) (memberMap map[string]Members, err error)
 }
 
 type redisStorage struct {
 	conn redis.Conn
 }
 
-func (s *redisStorage) getTokenKey(id uint32) string {
-	return fmt.Sprintf("tsearch_token:%d", id)
-}
-
-func (s *redisStorage) SaveTokens(id uint32, tokens []string) (err error) {
-	data, err := json.Marshal(tokens)
-	if err != nil {
-		return err
+func (s *redisStorage) MultiSet(kvs ...*KeyValue) (err error) {
+	if len(kvs) == 0 {
+		return
 	}
-	key := s.getTokenKey(id)
-	_, err = redis.String(s.conn.Do("SET", key, data))
+
+	param := make([]interface{}, 0, 2*len(kvs))
+	for _, kv := range kvs {
+		param = append(param, kv.Key, kv.Value)
+	}
+	_, err = s.conn.Do("MSET", param...)
 	return err
 }
 
-func (s *redisStorage) DeleteTokens(id uint32) (err error) {
-	key := s.getTokenKey(id)
-	_, err = s.conn.Do("DEL", key)
+func (s *redisStorage) MultiGet(keys ...string) (values []string, err error) {
+	if len(keys) == 0 {
+		return
+	}
+
+	param := make([]interface{}, len(keys))
+	for i := range keys {
+		param[i] = keys[i]
+	}
+	values, err = redis.Strings(s.conn.Do("MGET", param...))
+	if err != nil && err != redis.ErrNil {
+		return values, err
+	}
+	return values, nil
+}
+
+func (s *redisStorage) MultiDel(keys ...string) (err error) {
+	if len(keys) == 0 {
+		return
+	}
+	param := make([]interface{}, len(keys))
+	for i := range keys {
+		param[i] = keys[i]
+	}
+
+	_, err = s.conn.Do("DEL", param...)
 	return err
 }
 
-func (s *redisStorage) GetTokens(id uint32) (tokens []string, err error) {
-	key := s.getTokenKey(id)
-	data, err := redis.String(s.conn.Do("GET", key))
-	if err == redis.ErrNil {
-		return tokens, nil
+func (s *redisStorage) MultiSetAdd(kvs ...*KeyValue) (err error) {
+	if len(kvs) == 0 {
+		return
 	}
-	if err != nil {
-		return nil, err
-	}
-
-	err = json.Unmarshal([]byte(data), &tokens)
-	return
-}
-
-func (s *redisStorage) indexKey(key string) string {
-	return fmt.Sprintf("index:%s", key)
-}
-
-func (s *redisStorage) UpdateIndex(id uint32, oldTokens []string, newTokens []string) (err error) {
-	if len(oldTokens) == 0 && len(newTokens) == 0 {
-		return nil
-	}
-
 	_, err = s.conn.Do("MULTI")
-	if err != nil {
-		return err
-	}
-	for _, token := range oldTokens {
-		key := s.indexKey(token)
-		_ = s.conn.Send("SREM", key, id)
-	}
-
-	for _, token := range newTokens {
-		key := s.indexKey(token)
-		_ = s.conn.Send("SADD", key, id)
+	for _, kv := range kvs {
+		_ = s.conn.Send("SADD", kv.Key, kv.Value)
 	}
 	_, err = s.conn.Do("EXEC")
 	return err
 }
 
-type HitCounter struct {
-	Count int
-}
-
-func (s *redisStorage) SearchIndex(tokens []string) (hits map[uint32]*HitCounter, err error) {
-	hits = make(map[uint32]*HitCounter)
-	if len(tokens) == 0 {
+func (s *redisStorage) MultiSetDel(kvs ...*KeyValue) (err error) {
+	if len(kvs) == 0 {
 		return
 	}
 	_, err = s.conn.Do("MULTI")
-	if err != nil {
-		return
+	for _, kv := range kvs {
+		_ = s.conn.Send("SREM", kv.Key, kv.Value)
+	}
+	_, err = s.conn.Do("EXEC")
+	return err
+}
+
+func (s *redisStorage) MultiGetMembers(keys ...string) (memberMap map[string]Members, err error) {
+	if len(keys) == 0 {
+		return nil, err
 	}
 
-	for _, token := range tokens {
-		key := s.indexKey(token)
+	_, err = s.conn.Do("MULTI")
+	for _, key := range keys {
 		_ = s.conn.Send("SMEMBERS", key)
 	}
 
 	values, err := redis.Values(s.conn.Do("EXEC"))
-	if err != nil {
+	if err != nil && err != redis.ErrNil {
 		return
 	}
 
-	for _, value := range values {
-		idList, err := redis.Strings(value, nil)
+	memberMap = map[string]Members{}
+
+	for i, value := range values {
+		members, err := redis.Uint64s(value, nil)
 		if err != nil {
 			return nil, err
 		}
-
-		for _, idStr := range idList {
-			id, err := strconv.ParseInt(idStr, 10, 64)
-			if err != nil {
-				return nil, err
-			}
-
-			counter, ok := hits[uint32(id)]
-			if ok {
-				counter.Count += 1
-			} else {
-				counter = &HitCounter{
-					Count: 1,
-				}
-				hits[uint32(id)] = counter
-			}
+		if len(members) > 0 {
+			key := keys[i]
+			memberMap[key] = members
 		}
 	}
 	return

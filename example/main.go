@@ -1,59 +1,37 @@
 package main
 
 import (
-	"bufio"
 	"github.com/jinyyu/tsearch"
-	"io/ioutil"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
 	"log"
-	"os"
-	"strconv"
-	"strings"
 	"time"
 )
 
 type Item struct {
-	Desc   string
-	Pinyin string
+	ID     uint32 `db:"id"`
+	Desc   string `db:"description"`
+	Pinyin string `db:"ping_yin"`
 }
 
-func loadTestData(path string) (items map[uint32]*Item, err error) {
-	file, err := os.Open(path)
+func loadTestData() (result map[uint32]*Item, err error) {
+	// this Pings the database trying to connect
+	// use sqlx.Open() for sql.Open() semantics
+	db, err := sqlx.Connect("postgres", "user=ljy dbname=postgres sslmode=disable")
 	if err != nil {
-		return
-	}
-	data, err := ioutil.ReadAll(file)
-	if err != nil {
-		return
+		log.Fatalln(err)
 	}
 
-	items = make(map[uint32]*Item)
+	var items []Item
 
-	reader := bufio.NewReader(strings.NewReader(string(data)))
-	for {
-		line, _, e := reader.ReadLine()
-		if e != nil {
-			break
-		}
-
-		result := strings.Split(string(line), ",")
-		if len(result) != 4 {
-			//log.Printf("invalid record %v", result)
-			continue
-		}
-
-		idStr := result[0]
-		desc := result[2]
-		pingyin := result[3]
-		id, err := strconv.ParseInt(idStr, 10, 32)
-		if err != nil {
-			log.Fatalf("invalid record %v", err)
-			continue
-		}
-
-		items[uint32(id)] = &Item{
-			Desc:   desc,
-			Pinyin: pingyin,
-		}
+	err = db.Select(&items, "select id,description,ping_yin from test_software")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	result = map[uint32]*Item{}
+	for i := range items {
+		item := &items[i]
+		result[item.ID] = item
 	}
 	return
 }
@@ -68,21 +46,23 @@ func main() {
 
 	textSearch := tsearch.NewTextSearch(separator, storage)
 
-	items, err := loadTestData("./test_data.csv")
+	items, err := loadTestData()
 	if err != nil {
 		log.Fatalf("loadTestData error %v", err)
 	}
 
-	for id, item := range items {
-		err = textSearch.UpdateText(id, item.Pinyin)
-		if err != nil {
-			log.Fatalf("UpdateText error %v", err)
+	/*
+		for id, item := range items {
+			err = textSearch.UpdateText(id, item.Pinyin)
+			if err != nil {
+				log.Fatalf("UpdateText error %v", err)
+			}
 		}
-	}
+	*/
 
 	start := time.Now()
 	log.Printf("search start %s", start.String())
-	results, err := textSearch.Search("an quan niu lan qi", 0.6, 10)
+	results, err := textSearch.Search("niu lan qi an quan", 0.6, 100)
 
 	if err != nil {
 		log.Fatalf("Search error %v", err)

@@ -39,34 +39,9 @@ func Test_TrigramSeparator(t *testing.T) {
 	}
 }
 
-func TestDistinctTokens(t *testing.T) {
-	type Test struct {
-		tokens []string
-		result []string
-	}
-
-	tests := []Test{
-		{
-			[]string{" w", " wo", "wor", "ord", "rd "},
-			[]string{" w", " wo", "wor", "ord", "rd "},
-		},
-		{
-			[]string{"a", "b", "a", "b"},
-			[]string{"a", "b"},
-		},
-	}
-
-	for i, test := range tests {
-		output := DistinctTokens(test.tokens)
-		if !cmpStringArray(test.result, output) {
-			t.Errorf("DistinctTokens error %d\n", i)
-		}
-	}
-}
-
 func TestSimilarity(t *testing.T) {
-	a := "quan an"
-	b := "an kuan 123"
+	a := "niu lan qi an quan"
+	b := "wei ruan bi ying liu lan qi an quan fang hu"
 	separator := NewTrigramSeparator()
 	textSearch := NewTextSearch(separator, nil)
 

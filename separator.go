@@ -18,19 +18,19 @@ func NewTrigramSeparator() Separator {
 
 func (t *trigramSeparator) Extract(text string) []string {
 	words := strings.Split(text, " ")
-	var tokens []string
+	var grams []string
 	for _, word := range words {
-		tokens = append(tokens, t.extractWord(word)...)
+		grams = append(grams, t.extractWord(word)...)
 	}
-	return tokens
+	return grams
 }
 
 func (t *trigramSeparator) extractWord(word string) []string {
 	word = "  " + word + " "
-	tokens := make([]string, len(word)-t.numberCharacters+1)
+	grams := make([]string, len(word)-t.numberCharacters+1)
 	for i := 0; i < len(word)-t.numberCharacters+1; i++ {
 		word := word[i : i+t.numberCharacters]
-		tokens[i] = word
+		grams[i] = word
 	}
-	return tokens
+	return grams
 }
